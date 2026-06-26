@@ -2,45 +2,48 @@ interface OutputFormat {
   [key: string]: string | string[] | OutputFormat;
 }
 
-async function generateWithGemini(
+const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
+
+async function generateWithOpenAI(
   systemPrompt: string,
   userPrompt: string,
-  temperature: number
+  temperature: number,
+  model: string
 ): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    throw new Error("GEMINI_API_KEY is not set");
+    throw new Error("OPENAI_API_KEY is not set");
   }
 
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-  const response = await fetch(url, {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
     body: JSON.stringify({
-      contents: [
-        {
-          parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
-        },
+      model: model || process.env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL,
+      temperature,
+      max_tokens: 1200,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
       ],
-      generationConfig: {
-        temperature,
-        responseMimeType: "application/json",
-      },
     }),
   });
 
   if (!response.ok) {
     const errorBody = await response.text();
-    throw new Error(`Gemini API error (${response.status}): ${errorBody}`);
+    throw new Error(`OpenAI API error (${response.status}): ${errorBody}`);
   }
 
   const data = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  const text = data.choices?.[0]?.message?.content;
+  const finishReason = data.choices?.[0]?.finish_reason;
 
   if (!text) {
-    throw new Error("Gemini returned an empty response");
+    throw new Error(`OpenAI returned an empty response (${finishReason || "unknown"})`);
   }
 
   return text;
@@ -96,9 +99,9 @@ export async function strict_output(
   output_format: OutputFormat,
   default_category: string = "",
   output_value_only: boolean = false,
-  _model: string = "gemini-2.5-flash-lite",
-  temperature: number = 1,
-  num_tries: number = 3,
+  model: string = DEFAULT_OPENAI_MODEL,
+  temperature: number = 0.7,
+  num_tries: number = 5,
   verbose: boolean = false
 ): Promise<
   {
@@ -126,13 +129,16 @@ export async function strict_output(
     }
 
     if (list_input) {
-      output_format_prompt += `\nGenerate a list of json, one json for each input element.`;
+      output_format_prompt += `\nGenerate one JSON object for each input element. Return a JSON object with a "questions" key containing the array of results.`;
+    } else {
+      output_format_prompt += `\nReturn a JSON object with a "questions" key containing an array with one result object.`;
     }
 
-    const raw = await generateWithGemini(
+    const raw = await generateWithOpenAI(
       system_prompt + output_format_prompt + error_msg,
-      user_prompt.toString(),
-      temperature
+      Array.isArray(user_prompt) ? user_prompt.join("\n") : user_prompt,
+      temperature,
+      model
     );
 
     if (verbose) {
@@ -141,7 +147,7 @@ export async function strict_output(
         system_prompt + output_format_prompt + error_msg
       );
       console.log("\nUser prompt:", user_prompt);
-      console.log("\nGemini response:", raw);
+      console.log("\nOpenAI response:", raw);
     }
 
     try {

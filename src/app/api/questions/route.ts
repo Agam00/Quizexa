@@ -1,4 +1,7 @@
-import { generateQuestions } from "@/lib/generate-questions";
+import {
+  generateQuestionsOrThrow,
+  QuestionGenerationError,
+} from "@/lib/generate-questions";
 import { getAuthSession } from "@/lib/nextauth";
 import { getQuestionsSchema } from "@/schemas/questions";
 import { NextResponse } from "next/server";
@@ -19,19 +22,16 @@ export async function POST(req: Request) {
 
     const body = await req.json();
     const { amount, topic, type } = getQuestionsSchema.parse(body);
-    const questions = await generateQuestions({ amount, topic, type });
-
-    if (!questions.length) {
-      return NextResponse.json(
-        { error: "Failed to generate questions. Please try again." },
-        { status: 500 }
-      );
-    }
+    const questions = await generateQuestionsOrThrow({ amount, topic, type });
 
     return NextResponse.json({ questions }, { status: 200 });
   } catch (error) {
     if (error instanceof ZodError) {
       return NextResponse.json({ error: error.issues }, { status: 400 });
+    }
+
+    if (error instanceof QuestionGenerationError) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     console.error("Question generation error:", error);

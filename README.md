@@ -42,8 +42,8 @@ In **Vercel → Project → Settings → Environment Variables**, add these for 
 | `NEXTAUTH_URL` | `http://localhost:3000` | `https://your-app.vercel.app` |
 | `GOOGLE_CLIENT_ID` | from Google Cloud | same client ID |
 | `GOOGLE_CLIENT_SECRET` | from Google Cloud | same secret |
-| `GEMINI_API_KEY` | from Google AI Studio | same key |
-| `GEMINI_MODEL` | `gemini-2.5-flash-lite` | `gemini-2.5-flash-lite` |
+| `OPENAI_API_KEY` | from OpenAI platform | same key |
+| `OPENAI_MODEL` | `gpt-4o-mini` | `gpt-4o-mini` |
 
 ### 4. Sync database tables
 
@@ -88,7 +88,7 @@ Click **Deploy** or push a new commit. After changing env vars, always **Redeplo
 |---------|-----|
 | Server error on homepage | Check `NEXTAUTH_SECRET` and `NEXTAUTH_URL` |
 | Google sign-in fails | Update OAuth redirect URI to production URL |
-| Quiz creation fails | Check `GEMINI_API_KEY` in Vercel |
+| Quiz creation fails | Check `OPENAI_API_KEY` in Vercel |
 | Database errors | Verify `DATABASE_URL` / `DATABASE_URL_UNPOOLED` and run `npx prisma db push` |
 | Build fails on `maxDuration` | Hobby plan max is 300s (already configured in `api/questions`) |
 

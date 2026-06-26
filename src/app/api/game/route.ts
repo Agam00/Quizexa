@@ -1,10 +1,12 @@
 import { prisma } from "@/lib/db";
 import {
-  generateQuestions,
+  generateQuestionsOrThrow,
+  QuestionGenerationError,
   type McqQuestion,
   type OpenQuestion,
 } from "@/lib/generate-questions";
 import { getAuthSession } from "@/lib/nextauth";
+import { getSessionUserId } from "@/lib/session-user";
 import { quizCreationSchema } from "@/schemas/forms/quiz";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -13,11 +15,24 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function POST(req: Request) {
+  let gameId: string | null = null;
+
   try {
     const session = await getAuthSession();
     if (!session?.user) {
       return NextResponse.json(
         { error: "You must be logged in to create a game." },
+        { status: 401 }
+      );
+    }
+
+    const userId = await getSessionUserId(session);
+    if (!userId) {
+      return NextResponse.json(
+        {
+          error:
+            "Your account was not found in the database. Please sign out and sign in again.",
+        },
         { status: 401 }
       );
     }
@@ -28,10 +43,11 @@ export async function POST(req: Request) {
       data: {
         gameType: type,
         timeStarted: new Date(),
-        userId: session.user.id,
+        userId,
         topic,
       },
     });
+    gameId = game.id;
 
     await prisma.topic_count.upsert({
       where: { topic },
@@ -39,15 +55,7 @@ export async function POST(req: Request) {
       update: { count: { increment: 1 } },
     });
 
-    const questions = await generateQuestions({ amount, topic, type });
-
-    if (!questions.length) {
-      await prisma.game.delete({ where: { id: game.id } });
-      return NextResponse.json(
-        { error: "Failed to generate questions. Please try again." },
-        { status: 500 }
-      );
-    }
+    const questions = await generateQuestionsOrThrow({ amount, topic, type });
 
     if (type === "mcq") {
       const manyData = (questions as McqQuestion[]).map((question) => {
@@ -81,8 +89,31 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ gameId: game.id }, { status: 200 });
   } catch (error) {
+    if (gameId) {
+      await prisma.game.delete({ where: { id: gameId } }).catch(() => {});
+    }
+
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.issues }, { status: 400 });
+    }
+
+    if (error instanceof QuestionGenerationError) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "P2003"
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Your account was not found in the database. Please sign out and sign in again.",
+        },
+        { status: 401 }
+      );
     }
 
     console.error("Game creation error:", error);
